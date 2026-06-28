@@ -391,7 +391,9 @@ impl<Opaque: IStable> ErasedInterfaceRefMut<Opaque> {
 /// an erased vtable rebound to `VTable`.
 pub trait InterfaceResolverMut<Opaque: IStable> {
     /// Resolves a mutable extension interface by its generated vtable type.
-    fn resolve_interface<VTable>(&mut self) -> crate::option::Option<InterfaceRefMut<Opaque, VTable>>
+    fn resolve_interface<VTable>(
+        &mut self,
+    ) -> crate::option::Option<InterfaceRefMut<Opaque, VTable>>
     where
         VTable: IStable,
         InterfaceRefMut<Opaque, VTable>: IStable + IDeterminantProvider<()>;

@@ -82,8 +82,7 @@ impl HostCore for HostImpl {
         interface_id: u64,
         expected: &'static stabby::report::TypeReport,
     ) -> stabby::option::Option<stabby::opaque::ErasedInterfaceRefMut<Host>> {
-        let mut this = unsafe { stabby::opaque::RefMut::<Host>::from_mut(self) };
-        host_interface_query(&mut this, interface_id, expected)
+        host_interface_query_impl(self, interface_id, expected)
     }
 }
 
@@ -108,17 +107,13 @@ fn export_interface_methods_accept_opaque_handles() {
 
 #[test]
 fn interface_ref_mut_calls_runtime_bound_vtable() {
-    fn plugin_callback(
-        mut host: HostApiRefMut,
-        player: stabby::str::Str<'_>,
-    ) -> u32 {
+    fn plugin_callback(mut host: HostApiRefMut, player: stabby::str::Str<'_>) -> u32 {
         host.log(stabby::str::Str::new("joined"));
         host.increment_counter(player, 1)
     }
 
     let mut host = HostImpl { calls: 0 };
-    let host = unsafe { stabby::opaque::RefMut::<Host>::from_mut(&mut host) };
-    let host = host_interface_bind(host);
+    let host = host_interface_bind_impl(&mut host);
     let player = String::from("local-player");
 
     assert_eq!(plugin_callback(host, stabby::str::Str::new(&player)), 19);
@@ -135,8 +130,7 @@ fn frozen_core_resolves_extension_interface() {
     }
 
     let mut host = HostImpl { calls: 0 };
-    let host = unsafe { stabby::opaque::RefMut::<Host>::from_mut(&mut host) };
-    let host = host_core_interface_bind(host);
+    let host = host_core_interface_bind_impl(&mut host);
     let player = String::from("local-player");
 
     assert_eq!(plugin_callback(host, stabby::str::Str::new(&player)), 19);

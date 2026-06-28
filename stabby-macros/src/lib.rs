@@ -519,6 +519,11 @@ pub fn interface(attrs: TokenStream, item: TokenStream) -> TokenStream {
 
 /// Exports a single-implementor interface as individually checked method symbols.
 ///
+/// When `vtable = TraitVTable` is provided, this also generates public
+/// opaque-handle bind/query helpers and crate-private implementation-type
+/// helpers such as `<prefix>_interface_bind_impl` and
+/// `<prefix>_interface_query_impl`.
+///
 /// # Panics
 /// If the annotated impl contains unsupported signatures.
 #[proc_macro_attribute]

@@ -58,8 +58,7 @@ impl opaque_library::HostCore for HostImpl {
         interface_id: u64,
         expected: &'static stabby::report::TypeReport,
     ) -> stabby::option::Option<stabby::opaque::ErasedInterfaceRefMut<opaque_library::Host>> {
-        let mut this = unsafe { stabby::opaque::RefMut::<opaque_library::Host>::from_mut(self) };
-        host_interface_query(&mut this, interface_id, expected)
+        host_interface_query_impl(self, interface_id, expected)
     }
 }
 
@@ -83,8 +82,7 @@ fn main() {
     assert_eq!(counter.label_len(stabby::str::Str::new(&label)), 11);
 
     let mut host = HostImpl { counter: 0 };
-    let host = unsafe { stabby::opaque::RefMut::<opaque_library::Host>::from_mut(&mut host) };
-    let host = host_core_interface_bind(host);
+    let host = host_core_interface_bind_impl(&mut host);
     let player = String::from("runtime-player");
     assert_eq!(
         simulated_plugin_callback(host, stabby::str::Str::new(&player)),

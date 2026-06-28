@@ -448,6 +448,7 @@ fn interface_vtable_items(
     args: &InterfaceArgs,
     methods: &[Method],
     st: &TokenStream,
+    self_ty: &Type,
 ) -> Option<TokenStream> {
     let vtable = args.vtable.as_ref()?;
     let Receiver::Opaque(opaque) = &args.receiver else {
@@ -456,8 +457,12 @@ fn interface_vtable_items(
     let symbols = methods.iter().map(|method| &method.symbol);
     let vtable_static = symbol_ident(&args.prefix, &format_ident!("interface_vtable"));
     let bind_fn = symbol_ident(&args.prefix, &format_ident!("interface_bind"));
+    let bind_impl_fn = symbol_ident(&args.prefix, &format_ident!("interface_bind_impl"));
     let bind_erased_fn = symbol_ident(&args.prefix, &format_ident!("interface_bind_erased"));
+    let bind_erased_impl_fn =
+        symbol_ident(&args.prefix, &format_ident!("interface_bind_erased_impl"));
     let query_fn = symbol_ident(&args.prefix, &format_ident!("interface_query"));
+    let query_impl_fn = symbol_ident(&args.prefix, &format_ident!("interface_query_impl"));
     let bind_ref_fn = methods
         .iter()
         .all(|method| !method.receiver_mut)
@@ -465,16 +470,33 @@ fn interface_vtable_items(
     let bind_ref = bind_ref_fn.map(|bind_ref_fn| {
         let bind_ref_erased_fn =
             symbol_ident(&args.prefix, &format_ident!("interface_bind_ref_erased"));
+        let bind_ref_impl_fn =
+            symbol_ident(&args.prefix, &format_ident!("interface_bind_ref_impl"));
+        let bind_ref_erased_impl_fn =
+            symbol_ident(&args.prefix, &format_ident!("interface_bind_ref_erased_impl"));
         let query_ref_fn = symbol_ident(&args.prefix, &format_ident!("interface_query_ref"));
+        let query_ref_impl_fn =
+            symbol_ident(&args.prefix, &format_ident!("interface_query_ref_impl"));
         quote! {
             #[allow(missing_docs)]
             pub fn #bind_ref_fn(this: #st::opaque::Ref<#opaque>) -> #st::opaque::InterfaceRef<#opaque, #vtable> {
                 #st::opaque::InterfaceRef::new(this, &#vtable_static)
             }
 
+            #[allow(dead_code, missing_docs, private_interfaces)]
+            pub(crate) fn #bind_ref_impl_fn(this: &#self_ty) -> #st::opaque::InterfaceRef<#opaque, #vtable> {
+                let this = unsafe { #st::opaque::Ref::<#opaque>::from_ref(this) };
+                #bind_ref_fn(this)
+            }
+
             #[allow(missing_docs)]
             pub fn #bind_ref_erased_fn(this: #st::opaque::Ref<#opaque>) -> #st::opaque::ErasedInterfaceRef<#opaque> {
                 #bind_ref_fn(this).erase()
+            }
+
+            #[allow(dead_code, missing_docs, private_interfaces)]
+            pub(crate) fn #bind_ref_erased_impl_fn(this: &#self_ty) -> #st::opaque::ErasedInterfaceRef<#opaque> {
+                #bind_ref_impl_fn(this).erase()
             }
 
             #[allow(missing_docs)]
@@ -491,6 +513,16 @@ fn interface_vtable_items(
                     #st::option::Option::None()
                 }
             }
+
+            #[allow(dead_code, missing_docs, private_interfaces)]
+            pub(crate) fn #query_ref_impl_fn(
+                this: &#self_ty,
+                interface_id: u64,
+                expected: &'static #st::report::TypeReport,
+            ) -> #st::option::Option<#st::opaque::ErasedInterfaceRef<#opaque>> {
+                let this = unsafe { #st::opaque::Ref::<#opaque>::from_ref(this) };
+                #query_ref_fn(this, interface_id, expected)
+            }
         }
     });
     Some(quote! {
@@ -502,9 +534,20 @@ fn interface_vtable_items(
             #st::opaque::InterfaceRefMut::new(this, &#vtable_static)
         }
 
+        #[allow(dead_code, missing_docs, private_interfaces)]
+        pub(crate) fn #bind_impl_fn(this: &mut #self_ty) -> #st::opaque::InterfaceRefMut<#opaque, #vtable> {
+            let this = unsafe { #st::opaque::RefMut::<#opaque>::from_mut(this) };
+            #bind_fn(this)
+        }
+
         #[allow(missing_docs)]
         pub fn #bind_erased_fn(this: #st::opaque::RefMut<#opaque>) -> #st::opaque::ErasedInterfaceRefMut<#opaque> {
             #bind_fn(this).erase()
+        }
+
+        #[allow(dead_code, missing_docs, private_interfaces)]
+        pub(crate) fn #bind_erased_impl_fn(this: &mut #self_ty) -> #st::opaque::ErasedInterfaceRefMut<#opaque> {
+            #bind_impl_fn(this).erase()
         }
 
         #[allow(missing_docs)]
@@ -520,6 +563,16 @@ fn interface_vtable_items(
             } else {
                 #st::option::Option::None()
             }
+        }
+
+        #[allow(dead_code, missing_docs, private_interfaces)]
+        pub(crate) fn #query_impl_fn(
+            this: &mut #self_ty,
+            interface_id: u64,
+            expected: &'static #st::report::TypeReport,
+        ) -> #st::option::Option<#st::opaque::ErasedInterfaceRefMut<#opaque>> {
+            let mut this = unsafe { #st::opaque::RefMut::<#opaque>::from_mut(this) };
+            #query_fn(&mut this, interface_id, expected)
         }
 
         #bind_ref
@@ -1011,7 +1064,7 @@ pub fn export_interface(
     let exports = methods
         .iter()
         .map(|method| method.export_item(&args.receiver, &st, trait_path, self_ty));
-    let vtable_items = interface_vtable_items(&args, &methods, &st);
+    let vtable_items = interface_vtable_items(&args, &methods, &st, self_ty);
     quote! {
         #item
         #(#exports)*

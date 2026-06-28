@@ -127,6 +127,7 @@ extern "C" fn plugin_callback(
 ```
 
 `#[stabby::interface]` also generates aliases such as `HostCoreRefMut` and `HostLoggingV1RefMut`. On the host side, `#[stabby::export_interface(..., vtable = HostLoggingV1VTable)]` builds the static table, bind helpers, and `steel_host_logging_interface_query` from the exported method wrappers.
+For host code that still has the concrete implementation, the same export also emits crate-private helpers such as `steel_host_logging_interface_bind_impl(&mut host)` and `steel_host_logging_interface_query_impl(&mut host, interface_id, expected)`, so resolver implementations do not need to reconstruct opaque handles by hand.
 
 ## Functions
 ### `#[stabby::stabby]`

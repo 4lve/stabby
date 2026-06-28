@@ -421,8 +421,7 @@ impl HostApi for HostImpl {
 }
 
 let mut host_impl = HostImpl;
-let host = unsafe { stabby::opaque::RefMut::<Host>::from_mut(&mut host_impl) };
-let host = steel_host_interface_bind(host);
+let host = steel_host_interface_bind_impl(&mut host_impl);
 ```
 
 For additive host services, keep the callback signature on a small frozen core resolver and ask it for separate extension interfaces:
@@ -453,8 +452,7 @@ impl HostCore for HostImpl {
 		interface_id: u64,
 		expected: &'static stabby::report::TypeReport,
 	) -> stabby::option::Option<stabby::opaque::ErasedInterfaceRefMut<Host>> {
-		let mut host = unsafe { stabby::opaque::RefMut::<Host>::from_mut(self) };
-		steel_host_logging_interface_query(&mut host, interface_id, expected)
+		steel_host_logging_interface_query_impl(self, interface_id, expected)
 	}
 }
 ```
@@ -477,6 +475,8 @@ extern "C" fn on_player_join(
 Never mutate a frozen core interface. Add `HostLoggingV1`, `HostCountersV1`, `HostCommandsV1`, or a new `HostLoggingV2` as separate interfaces instead. Old plugins never request interfaces they do not know about.
 
 The v-table stores erased ABI signatures, so borrowed arguments such as `stabby::str::Str<'_>` remain ergonomic in the Rust trait while the generated ABI function pointer reports use stable `'static` forms internally.
+
+For each exported v-table interface, `#[stabby::export_interface]` generates two helper layers. The public `steel_host_logging_interface_bind` and `steel_host_logging_interface_query` functions accept already-erased `stabby::opaque::RefMut<Host>` handles. The crate-private `steel_host_logging_interface_bind_impl` and `steel_host_logging_interface_query_impl` functions accept `&mut HostImpl` inside the exporting crate and perform the opaque conversion for you.
 
 The same method-symbol model can be used for non-opaque stable receiver types by replacing `opaque = Store` with `receiver = SomeStableType`. This gives stable structs and enums method-style imports without bundling the whole method set into a v-table.
 
