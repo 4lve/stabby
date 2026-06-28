@@ -109,7 +109,7 @@ fn export_interface_methods_accept_opaque_handles() {
 #[test]
 fn interface_ref_mut_calls_runtime_bound_vtable() {
     fn plugin_callback(
-        mut host: stabby::opaque::InterfaceRefMut<Host, HostApiVTable>,
+        mut host: HostApiRefMut,
         player: stabby::str::Str<'_>,
     ) -> u32 {
         host.log(stabby::str::Str::new("joined"));
@@ -126,13 +126,10 @@ fn interface_ref_mut_calls_runtime_bound_vtable() {
 
 #[test]
 fn frozen_core_resolves_extension_interface() {
-    fn plugin_callback(
-        mut host: stabby::opaque::InterfaceRefMut<Host, HostCoreVTable>,
-        player: stabby::str::Str<'_>,
-    ) -> u32 {
-        use HostCoreInterfaceResolver;
+    fn plugin_callback(mut host: HostCoreRefMut, player: stabby::str::Str<'_>) -> u32 {
+        use HostApiInterfaceExt;
 
-        let mut host_api = host.resolve_interface::<HostApiVTable>().unwrap();
+        let mut host_api = host.resolve_host_api().unwrap();
         host_api.log(stabby::str::Str::new("joined"));
         host_api.increment_counter(player, 1)
     }

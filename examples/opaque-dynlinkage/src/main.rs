@@ -64,14 +64,12 @@ impl opaque_library::HostCore for HostImpl {
 }
 
 fn simulated_plugin_callback(
-    mut host: stabby::opaque::InterfaceRefMut<opaque_library::Host, opaque_library::HostCoreVTable>,
+    mut host: opaque_library::HostCoreRefMut,
     player: stabby::str::Str<'_>,
 ) -> u32 {
-    use opaque_library::{HostApi, HostCoreInterfaceResolver};
+    use opaque_library::{HostApi, HostApiInterfaceExt};
 
-    let mut host = host
-        .resolve_interface::<opaque_library::HostApiVTable>()
-        .unwrap();
+    let mut host = host.resolve_host_api().unwrap();
     host.log(stabby::str::Str::new("joined"));
     host.increment_counter(player, 1)
 }

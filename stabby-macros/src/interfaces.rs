@@ -687,6 +687,33 @@ fn symbol_ident(prefix: &str, ident: &Ident) -> Ident {
     Ident::new(&symbol, Span::call_site())
 }
 
+fn snake_case_ident(prefix: &str, ident: &Ident) -> Ident {
+    let value = ident.to_string();
+    let chars = value.chars().collect::<Vec<_>>();
+    let mut out = String::from(prefix);
+    for (idx, ch) in chars.iter().copied().enumerate() {
+        if ch.is_ascii_uppercase() {
+            let prev = idx.checked_sub(1).and_then(|idx| chars.get(idx).copied());
+            let next = chars.get(idx + 1).copied();
+            let needs_separator = match prev {
+                Some(prev) => {
+                    prev.is_ascii_lowercase()
+                        || prev.is_ascii_digit()
+                        || matches!(next, Some(next) if next.is_ascii_lowercase())
+                }
+                None => false,
+            };
+            if !out.ends_with('_') && needs_separator {
+                out.push('_');
+            }
+            out.push(ch.to_ascii_lowercase());
+        } else {
+            out.push(ch);
+        }
+    }
+    Ident::new(&out, ident.span())
+}
+
 fn trait_methods(item: &ItemTrait, prefix: &str) -> Vec<Method> {
     if !item.generics.params.is_empty() {
         panic!("stabby interfaces don't support generic traits yet");
@@ -799,7 +826,11 @@ pub fn interface(attrs: proc_macro::TokenStream, item: ItemTrait) -> proc_macro2
     }
     let trait_ident = &item.ident;
     let vtable_ident = format_ident!("{trait_ident}VTable");
+    let ref_ident = format_ident!("{trait_ident}Ref");
+    let ref_mut_ident = format_ident!("{trait_ident}RefMut");
     let resolver_ident = format_ident!("{trait_ident}InterfaceResolver");
+    let accessor_ident = format_ident!("{trait_ident}InterfaceExt");
+    let resolve_ident = snake_case_ident("resolve_", trait_ident);
     let vis = &item.vis;
     let interface_id_fn = symbol_ident(&args.prefix, &format_ident!("interface_id"));
     let interface_report_fn = symbol_ident(&args.prefix, &format_ident!("interface_report"));
@@ -831,7 +862,8 @@ pub fn interface(attrs: proc_macro::TokenStream, item: ItemTrait) -> proc_macro2
             type CType = <#layout as #st::IStable>::CType;
         }
     });
-    let ref_impl = if methods.iter().all(|method| !method.receiver_mut) {
+    let all_shared = methods.iter().all(|method| !method.receiver_mut);
+    let ref_impl = if all_shared {
         let methods = methods.iter().map(|method| method.bound_method(false));
         Some(quote! {
             impl #trait_ident for #st::opaque::InterfaceRef<#opaque, #vtable_ident> {
@@ -842,6 +874,32 @@ pub fn interface(attrs: proc_macro::TokenStream, item: ItemTrait) -> proc_macro2
         None
     };
     let mut_methods = methods.iter().map(|method| method.bound_method(true));
+    let ref_alias = all_shared.then(|| {
+        quote! {
+            #[allow(missing_docs)]
+            #vis type #ref_ident = #st::opaque::InterfaceRef<#opaque, #vtable_ident>;
+        }
+    });
+    let typed_resolver_impl = quote! {
+        #ref_alias
+
+        #[allow(missing_docs)]
+        #vis type #ref_mut_ident = #st::opaque::InterfaceRefMut<#opaque, #vtable_ident>;
+
+        #[allow(missing_docs)]
+        #vis trait #accessor_ident {
+            fn #resolve_ident(&mut self) -> #st::option::Option<#ref_mut_ident>;
+        }
+
+        impl<T> #accessor_ident for T
+        where
+            T: #st::opaque::InterfaceResolverMut<#opaque> + ?Sized,
+        {
+            fn #resolve_ident(&mut self) -> #st::option::Option<#ref_mut_ident> {
+                <Self as #st::opaque::InterfaceResolverMut<#opaque>>::resolve_interface::<#vtable_ident>(self)
+            }
+        }
+    };
     let resolver_impl = args.resolver.then(|| {
         quote! {
             #[allow(missing_docs)]
@@ -852,7 +910,7 @@ pub fn interface(attrs: proc_macro::TokenStream, item: ItemTrait) -> proc_macro2
                     #st::opaque::InterfaceRefMut<#opaque, VTable>: #st::IStable + #st::IDeterminantProvider<()>;
             }
 
-            impl #resolver_ident for #st::opaque::InterfaceRefMut<#opaque, #vtable_ident> {
+            impl #st::opaque::InterfaceResolverMut<#opaque> for #st::opaque::InterfaceRefMut<#opaque, #vtable_ident> {
                 fn resolve_interface<VTable>(&mut self) -> #st::option::Option<#st::opaque::InterfaceRefMut<#opaque, VTable>>
                 where
                     VTable: #st::IStable,
@@ -869,6 +927,16 @@ pub fn interface(attrs: proc_macro::TokenStream, item: ItemTrait) -> proc_macro2
                         }),
                         || #st::option::Option::None(),
                     )
+                }
+            }
+
+            impl #resolver_ident for #st::opaque::InterfaceRefMut<#opaque, #vtable_ident> {
+                fn resolve_interface<VTable>(&mut self) -> #st::option::Option<#st::opaque::InterfaceRefMut<#opaque, VTable>>
+                where
+                    VTable: #st::IStable,
+                    #st::opaque::InterfaceRefMut<#opaque, VTable>: #st::IStable + #st::IDeterminantProvider<()>,
+                {
+                    <Self as #st::opaque::InterfaceResolverMut<#opaque>>::resolve_interface::<VTable>(self)
                 }
             }
         }
@@ -922,6 +990,8 @@ pub fn interface(attrs: proc_macro::TokenStream, item: ItemTrait) -> proc_macro2
         impl #trait_ident for #st::opaque::InterfaceRefMut<#opaque, #vtable_ident> {
             #(#mut_methods)*
         }
+
+        #typed_resolver_impl
 
         #resolver_impl
     }

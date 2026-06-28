@@ -117,16 +117,16 @@ pub trait HostLoggingV1 {
 }
 
 extern "C" fn plugin_callback(
-	mut host: stabby::opaque::InterfaceRefMut<Host, HostCoreVTable>,
+	mut host: HostCoreRefMut,
 ) {
-	use HostCoreInterfaceResolver;
+	use HostLoggingV1InterfaceExt;
 
-	let mut logging = host.resolve_interface::<HostLoggingV1VTable>().unwrap();
+	let mut logging = host.resolve_host_logging_v1().unwrap();
 	logging.log(stabby::str::Str::new("loaded"));
 }
 ```
 
-On the host side, `#[stabby::export_interface(..., vtable = HostLoggingV1VTable)]` builds the static table, bind helpers, and `steel_host_logging_interface_query` from the exported method wrappers.
+`#[stabby::interface]` also generates aliases such as `HostCoreRefMut` and `HostLoggingV1RefMut`. On the host side, `#[stabby::export_interface(..., vtable = HostLoggingV1VTable)]` builds the static table, bind helpers, and `steel_host_logging_interface_query` from the exported method wrappers.
 
 ## Functions
 ### `#[stabby::stabby]`

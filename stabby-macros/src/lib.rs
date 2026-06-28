@@ -503,6 +503,10 @@ pub fn import_interface(attrs: TokenStream, item: TokenStream) -> TokenStream {
 
 /// Defines a runtime-bound single-implementor interface vtable for an opaque type.
 ///
+/// This also generates a `TraitRefMut` alias, a `TraitRef` alias for all-shared
+/// interfaces, and a named resolver extension trait for resolving the interface
+/// from resolver capabilities.
+///
 /// Passing `resolver` also generates a typed extension trait for resolving erased
 /// extension interfaces through a `query_interface` method.
 ///

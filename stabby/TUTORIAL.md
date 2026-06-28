@@ -399,7 +399,7 @@ pub trait HostApi {
 }
 ```
 
-This generates an ABI-stable `HostApiVTable` and implements `HostApi` for `stabby::opaque::InterfaceRefMut<Host, HostApiVTable>`. If every method is shared, `stabby::opaque::InterfaceRef<Host, HostApiVTable>` is implemented too. Since the v-table type is part of any callback signature that mentions it, do not add methods to a v-table type that old plugins receive directly.
+This generates an ABI-stable `HostApiVTable`, a `HostApiRefMut` alias, and implements `HostApi` for `stabby::opaque::InterfaceRefMut<Host, HostApiVTable>`. If every method is shared, `HostApiRef` is generated and `stabby::opaque::InterfaceRef<Host, HostApiVTable>` implements the trait too. Since the v-table type is part of any callback signature that mentions it, do not add methods to a v-table type that old plugins receive directly.
 
 The host can implement and export the methods with `#[stabby::export_interface]`; adding `vtable = HostApiVTable` also creates a static v-table, bind helpers, and erased query helpers:
 ```ignore
@@ -442,7 +442,7 @@ pub trait HostLoggingV1 {
 }
 ```
 
-The `resolver` flag generates a `HostCoreInterfaceResolver` extension trait with a typed `resolve_interface::<VTable>()` helper. Each extension interface has its own generated ID and report accessors, and `#[stabby::export_interface(..., vtable = HostLoggingV1VTable)]` generates `steel_host_logging_interface_query`.
+The `resolver` flag generates a `HostCoreInterfaceResolver` extension trait with a typed `resolve_interface::<VTable>()` helper. Each extension interface also generates a named accessor trait, so importing `HostLoggingV1InterfaceExt` lets plugin code call `host.resolve_host_logging_v1()` without naming `HostLoggingV1VTable`. Each extension interface has its own generated ID and report accessors, and `#[stabby::export_interface(..., vtable = HostLoggingV1VTable)]` generates `steel_host_logging_interface_query`.
 
 The host's core resolver can route supported interfaces:
 ```ignore
@@ -463,12 +463,12 @@ The plugin callback receives only the frozen core interface and resolves the ext
 ```ignore
 extern "C" fn on_player_join(
 	&mut self,
-	mut host: stabby::opaque::InterfaceRefMut<Host, HostCoreVTable>,
+	mut host: HostCoreRefMut,
 	player: stabby::str::Str<'_>,
 ) -> u32 {
-	use HostCoreInterfaceResolver;
+	use HostLoggingV1InterfaceExt;
 
-	let mut logging = host.resolve_interface::<HostLoggingV1VTable>().unwrap();
+	let mut logging = host.resolve_host_logging_v1().unwrap();
 	logging.log(stabby::str::Str::new("joined"));
 	1
 }

@@ -19,7 +19,7 @@
 
 use core::{marker::PhantomData, ptr::NonNull};
 
-use crate::{report, str::Str, typenum2::*, IStable, StableLike};
+use crate::{report, str::Str, typenum2::*, IDeterminantProvider, IStable, StableLike};
 
 /// An ABI-stable shared handle to an opaque value.
 #[repr(transparent)]
@@ -383,6 +383,18 @@ impl<Opaque: IStable> ErasedInterfaceRefMut<Opaque> {
     pub unsafe fn assume_vtable<VTable: IStable>(self) -> InterfaceRefMut<Opaque, VTable> {
         unsafe { InterfaceRefMut::from_raw(self.this.as_ptr(), self.vtable.cast()) }
     }
+}
+
+/// Resolves typed extension interfaces from an opaque runtime capability.
+///
+/// Implementations should perform report compatibility checks before returning
+/// an erased vtable rebound to `VTable`.
+pub trait InterfaceResolverMut<Opaque: IStable> {
+    /// Resolves a mutable extension interface by its generated vtable type.
+    fn resolve_interface<VTable>(&mut self) -> crate::option::Option<InterfaceRefMut<Opaque, VTable>>
+    where
+        VTable: IStable,
+        InterfaceRefMut<Opaque, VTable>: IStable + IDeterminantProvider<()>;
 }
 
 const PTR_FIELD: &str = "ptr";
