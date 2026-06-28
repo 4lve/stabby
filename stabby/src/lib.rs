@@ -25,7 +25,8 @@
 extern crate core;
 
 pub use stabby_abi::{
-    assert_unchecked, dynptr, export, import, stabby, unreachable_unchecked, vtmacro as vtable,
+    assert_unchecked, dynptr, export, export_interface, import, import_interface, interface,
+    opaque, stabby, unreachable_unchecked, vtmacro as vtable,
 };
 
 pub use stabby_abi as abi;
@@ -57,7 +58,7 @@ pub mod future {
 
 /// The collection of traits that make `dynptr!(Box<dyn Fn...>)` possible
 pub use crate::abi::closure;
-pub use crate::abi::{option, result, slice, str};
+pub use crate::abi::{option, report, result, slice, str};
 
 pub use crate::abi::{vtable::Any, AccessAs, IStable, IntoSuperTrait};
 
@@ -87,6 +88,7 @@ pub mod _tutorial_ {}
 mod tests {
     mod enums;
     mod layouts;
+    mod opaque;
     mod traits;
     mod regressions {
         mod issue_103;

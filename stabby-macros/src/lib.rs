@@ -246,6 +246,7 @@ pub fn dynptr(tokens: TokenStream) -> TokenStream {
 
 mod enums;
 mod functions;
+mod interfaces;
 mod structs;
 mod traits;
 mod unions;
@@ -480,6 +481,45 @@ pub fn export(attrs: TokenStream, fn_spec: TokenStream) -> TokenStream {
 #[proc_macro_attribute]
 pub fn import(attrs: TokenStream, fn_spec: TokenStream) -> TokenStream {
     crate::functions::import(attrs, syn::parse(fn_spec).unwrap()).into()
+}
+
+/// Defines an opaque marker type.
+///
+/// # Panics
+/// If the annotated item is not a unit struct marker.
+#[proc_macro_attribute]
+pub fn opaque(attrs: TokenStream, item: TokenStream) -> TokenStream {
+    crate::interfaces::opaque(attrs, syn::parse(item).unwrap()).into()
+}
+
+/// Imports a single-implementor interface as individually checked method symbols.
+///
+/// # Panics
+/// If the annotated trait contains unsupported items or signatures.
+#[proc_macro_attribute]
+pub fn import_interface(attrs: TokenStream, item: TokenStream) -> TokenStream {
+    crate::interfaces::import_interface(attrs, syn::parse(item).unwrap()).into()
+}
+
+/// Defines a runtime-bound single-implementor interface vtable for an opaque type.
+///
+/// Passing `resolver` also generates a typed extension trait for resolving erased
+/// extension interfaces through a `query_interface` method.
+///
+/// # Panics
+/// If the annotated trait contains unsupported items or signatures.
+#[proc_macro_attribute]
+pub fn interface(attrs: TokenStream, item: TokenStream) -> TokenStream {
+    crate::interfaces::interface(attrs, syn::parse(item).unwrap()).into()
+}
+
+/// Exports a single-implementor interface as individually checked method symbols.
+///
+/// # Panics
+/// If the annotated impl contains unsupported signatures.
+#[proc_macro_attribute]
+pub fn export_interface(attrs: TokenStream, item: TokenStream) -> TokenStream {
+    crate::interfaces::export_interface(attrs, syn::parse(item).unwrap()).into()
 }
 
 #[proc_macro]

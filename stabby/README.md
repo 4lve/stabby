@@ -78,6 +78,56 @@ interface not actually being stable.
 
 Since stabby generates an additional `struct` when placed on a trait, you may want to add attributs to that `struct`'s declaration. You can do so, you can use `#[stabby::vt_attr(your_attribe = "goes here")]`. Any other attribute will be placed on the original trait.
 
+## Opaque interfaces
+When an API has a single implementation in a shared object, `#[stabby::opaque]`, `#[stabby::export_interface]`, and `#[stabby::import_interface]` let you expose method-style bindings without putting the whole method set in a v-table.
+
+Each method is lowered to its own checked function symbol, so adding a new method is additive for older consumers. Opaque receivers use `stabby::opaque::Ref<T>` and `stabby::opaque::RefMut<T>` handles whose reports include the logical marker type.
+
+```ignore
+#[stabby::opaque(module = "my_api::store")]
+pub struct Store;
+
+#[stabby::import_interface(opaque = Store, prefix = "store", name = "store_library")]
+pub trait StoreApi {
+	extern "C" fn len(&self) -> usize;
+	extern "C" fn clear(&mut self);
+}
+```
+
+Stable non-opaque receiver types can use the same method-symbol model with `receiver = MyStableType`.
+
+For runtime plugins, use `#[stabby::interface]` to generate ABI-stable function tables that can be passed with an opaque context instead of imported through `#[link]`. Keep plugin callback signatures on a small frozen resolver interface, then resolve additive extension interfaces at runtime.
+
+```ignore
+#[stabby::opaque(module = "steel::host")]
+pub struct Host;
+
+#[stabby::interface(opaque = Host, prefix = "steel_host_core", resolver)]
+pub trait HostCore {
+	extern "C" fn query_interface(
+		&mut self,
+		interface_id: u64,
+		expected: &'static stabby::report::TypeReport,
+	) -> stabby::option::Option<stabby::opaque::ErasedInterfaceRefMut<Host>>;
+}
+
+#[stabby::interface(opaque = Host, prefix = "steel_host_logging")]
+pub trait HostLoggingV1 {
+	extern "C" fn log(&mut self, message: stabby::str::Str<'_>);
+}
+
+extern "C" fn plugin_callback(
+	mut host: stabby::opaque::InterfaceRefMut<Host, HostCoreVTable>,
+) {
+	use HostCoreInterfaceResolver;
+
+	let mut logging = host.resolve_interface::<HostLoggingV1VTable>().unwrap();
+	logging.log(stabby::str::Str::new("loaded"));
+}
+```
+
+On the host side, `#[stabby::export_interface(..., vtable = HostLoggingV1VTable)]` builds the static table, bind helpers, and `steel_host_logging_interface_query` from the exported method wrappers.
+
 ## Functions
 ### `#[stabby::stabby]`
 Annotating a function with `#[stabby::stabby]` makes it `extern "C"` (but not `#[no_mangle]`) and checks its signature to ensure all exchanged types are marked with `stabby::abi::IStable`. You may also specify the calling convention of your choice.

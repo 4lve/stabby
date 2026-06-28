@@ -35,7 +35,10 @@ pub mod alloc;
 /// Extending [Non-Zero Types](core::num) to enable niches for other values than 0.
 pub mod num;
 
-pub use stabby_macros::{canary_suffixes, dynptr, export, import, stabby, vtable as vtmacro};
+pub use stabby_macros::{
+    canary_suffixes, dynptr, export, export_interface, import, import_interface, interface, opaque,
+    stabby, vtable as vtmacro,
+};
 use typenum2::unsigned::Alignment;
 
 use core::fmt::{Debug, Display};
@@ -145,6 +148,8 @@ mod fatptr;
 pub mod closure;
 /// Futures, but ABI-stable
 pub mod future;
+/// Opaque handle types for single-implementor interfaces.
+pub mod opaque;
 mod stable_impls;
 /// Support for vtables for multi-trait objects
 pub mod vtable;

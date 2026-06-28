@@ -325,8 +325,160 @@ The core principle with opaque types is to make consumer code completely unaware
 
 Opaque types are typically used when only one implementation of their API is expected to be loaded at any given time. The moment you expect more, what you probably want is trait objects.
 
-While this isn't yet implemented, as I'm still looking for ways to do it both conveniently and reliably, `stabby` will eventually try to provide a way to define opaque types with minimal boilerplate such that their binary code is only included when built as a shared object, while
-dependents on them would instead get bindings to interact with said shared objects as if they were standard Rust code. In the meantime, [trait objects](defining-abi-stable-traits) can fulfill the same role at a slightly higher runtime cost, but with greater flexibility yet.
+`stabby` supports this pattern by treating opaque methods as independently exported function symbols. Each method gets its own `#[stabby::export]` report and is checked only when that method is imported or called through the generated binding. This means adding a new method to an opaque API does not change an existing v-table, and therefore does not force older consumers to recompile as long as the methods they already use keep the same signatures.
+
+The opaque type itself is a marker:
+```rust
+#[stabby::opaque(module = "my_api::store")]
+pub struct Store;
+```
+
+The concrete implementation stays private to the library that exports the API. The public ABI only carries erased handles:
+- `stabby::opaque::Ref<Store>` for shared access.
+- `stabby::opaque::RefMut<Store>` for exclusive access.
+
+On the provider side, implement a normal Rust trait and export it as a set of checked method symbols:
+```ignore
+#[stabby::opaque(module = "my_api::store")]
+pub struct Store;
+
+pub trait StoreApi {
+	extern "C" fn len(&self) -> usize;
+	extern "C" fn insert(&mut self, key: stabby::str::Str<'_>);
+}
+
+struct RealStore {
+	len: usize,
+}
+
+#[stabby::export_interface(opaque = Store, prefix = "store")]
+impl StoreApi for RealStore {
+	extern "C" fn len(&self) -> usize {
+		self.len
+	}
+
+	extern "C" fn insert(&mut self, key: stabby::str::Str<'_>) {
+		// mutate the real store
+	}
+}
+```
+
+This produces checked symbols such as `store_len` and `store_insert`, along with the usual `store_len_stabbied_v3` report checkers.
+
+On the consumer side, import the same trait as load-time checked methods:
+```ignore
+#[stabby::opaque(module = "my_api::store")]
+pub struct Store;
+
+#[stabby::import_interface(opaque = Store, prefix = "store", name = "store_library")]
+pub trait StoreApi {
+	extern "C" fn len(&self) -> usize;
+	extern "C" fn insert(&mut self, key: stabby::str::Str<'_>);
+}
+```
+
+The generated implementations let `stabby::opaque::RefMut<Store>` call these methods with normal method syntax. If the interface only contains shared methods, `stabby::opaque::Ref<Store>` also implements it.
+
+When the provider and consumer declare the marker in different crates, use the same explicit `module = "..."` value on both sides. This makes the marker reports match while still letting each side keep the implementation details local.
+
+For runtime plugins, link-time imports are often the wrong direction: a plugin should not need unresolved host symbols just to call host services. Use `#[stabby::interface]` when the host should pass a bound capability into plugin callbacks.
+
+For a closed or deliberately frozen interface, the callback can receive the generated v-table type directly:
+```ignore
+#[stabby::opaque(module = "steel::host")]
+pub struct Host;
+
+#[stabby::interface(opaque = Host, prefix = "steel_host")]
+pub trait HostApi {
+	extern "C" fn log(&mut self, message: stabby::str::Str<'_>);
+	extern "C" fn increment_counter(
+		&mut self,
+		key: stabby::str::Str<'_>,
+		amount: u32,
+	) -> u32;
+}
+```
+
+This generates an ABI-stable `HostApiVTable` and implements `HostApi` for `stabby::opaque::InterfaceRefMut<Host, HostApiVTable>`. If every method is shared, `stabby::opaque::InterfaceRef<Host, HostApiVTable>` is implemented too. Since the v-table type is part of any callback signature that mentions it, do not add methods to a v-table type that old plugins receive directly.
+
+The host can implement and export the methods with `#[stabby::export_interface]`; adding `vtable = HostApiVTable` also creates a static v-table, bind helpers, and erased query helpers:
+```ignore
+struct HostImpl;
+
+#[stabby::export_interface(opaque = Host, prefix = "steel_host", vtable = HostApiVTable)]
+impl HostApi for HostImpl {
+	extern "C" fn log(&mut self, message: stabby::str::Str<'_>) {
+		// host-owned logging
+	}
+
+	extern "C" fn increment_counter(
+		&mut self,
+		key: stabby::str::Str<'_>,
+		amount: u32,
+	) -> u32 {
+		amount
+	}
+}
+
+let mut host_impl = HostImpl;
+let host = unsafe { stabby::opaque::RefMut::<Host>::from_mut(&mut host_impl) };
+let host = steel_host_interface_bind(host);
+```
+
+For additive host services, keep the callback signature on a small frozen core resolver and ask it for separate extension interfaces:
+```ignore
+#[stabby::interface(opaque = Host, prefix = "steel_host_core", resolver)]
+pub trait HostCore {
+	extern "C" fn query_interface(
+		&mut self,
+		interface_id: u64,
+		expected: &'static stabby::report::TypeReport,
+	) -> stabby::option::Option<stabby::opaque::ErasedInterfaceRefMut<Host>>;
+}
+
+#[stabby::interface(opaque = Host, prefix = "steel_host_logging")]
+pub trait HostLoggingV1 {
+	extern "C" fn log(&mut self, message: stabby::str::Str<'_>);
+}
+```
+
+The `resolver` flag generates a `HostCoreInterfaceResolver` extension trait with a typed `resolve_interface::<VTable>()` helper. Each extension interface has its own generated ID and report accessors, and `#[stabby::export_interface(..., vtable = HostLoggingV1VTable)]` generates `steel_host_logging_interface_query`.
+
+The host's core resolver can route supported interfaces:
+```ignore
+#[stabby::export_interface(opaque = Host, prefix = "steel_host_core", vtable = HostCoreVTable)]
+impl HostCore for HostImpl {
+	extern "C" fn query_interface(
+		&mut self,
+		interface_id: u64,
+		expected: &'static stabby::report::TypeReport,
+	) -> stabby::option::Option<stabby::opaque::ErasedInterfaceRefMut<Host>> {
+		let mut host = unsafe { stabby::opaque::RefMut::<Host>::from_mut(self) };
+		steel_host_logging_interface_query(&mut host, interface_id, expected)
+	}
+}
+```
+
+The plugin callback receives only the frozen core interface and resolves the extension it wants:
+```ignore
+extern "C" fn on_player_join(
+	&mut self,
+	mut host: stabby::opaque::InterfaceRefMut<Host, HostCoreVTable>,
+	player: stabby::str::Str<'_>,
+) -> u32 {
+	use HostCoreInterfaceResolver;
+
+	let mut logging = host.resolve_interface::<HostLoggingV1VTable>().unwrap();
+	logging.log(stabby::str::Str::new("joined"));
+	1
+}
+```
+
+Never mutate a frozen core interface. Add `HostLoggingV1`, `HostCountersV1`, `HostCommandsV1`, or a new `HostLoggingV2` as separate interfaces instead. Old plugins never request interfaces they do not know about.
+
+The v-table stores erased ABI signatures, so borrowed arguments such as `stabby::str::Str<'_>` remain ergonomic in the Rust trait while the generated ABI function pointer reports use stable `'static` forms internally.
+
+The same method-symbol model can be used for non-opaque stable receiver types by replacing `opaque = Store` with `receiver = SomeStableType`. This gives stable structs and enums method-style imports without bundling the whole method set into a v-table.
 
 ## Defining ABI stable traits
 

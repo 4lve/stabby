@@ -18,6 +18,8 @@ members = [
 	"stabby",
 	"stabby-abi",
 	"examples/library",
+	"examples/opaque-library",
+	"examples/opaque-dynlinkage",
 	"examples/libloading",
 	"examples/dynlinkage",
 ]
